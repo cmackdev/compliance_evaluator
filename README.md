@@ -2,8 +2,6 @@
 
 A comprehensive application for evaluating document compliance with General Records Schedule (GRS) retention policies using AWS Bedrock and generative AI.
 
-![Government Document Compliance Evaluator](https://via.placeholder.com/800x400?text=Government+Document+Compliance+Evaluator)
-
 ## Table of Contents
 
 - [Overview](#overview)
