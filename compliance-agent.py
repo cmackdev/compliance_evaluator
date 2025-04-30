@@ -13,8 +13,8 @@ import docx
 client = boto3.client('bedrock-agent-runtime', region_name='us-west-2')
 
 # Agent alias ARN
-agent_id = "PJIPIMMBKW"  # Supervisor agent
-agent_alias_id = "OZ7GAGZGMQ"  # malicious_compliance alias
+agent_id = "<agent_id>  # Supervisor agent
+agent_alias_id = "<alias_id>"  # agent alias
 
 # Function to extract text from PDF with size limiting
 def extract_text_from_pdf(pdf_file, max_pages=10, max_chars=50000):
