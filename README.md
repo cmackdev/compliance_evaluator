@@ -1,6 +1,8 @@
 # Government Document Compliance Evaluator
 
-A comprehensive application for evaluating document compliance with General Records Schedule (GRS) retention policies using AWS Bedrock and generative AI.
+A comprehensive application for evaluating document compliance with Utah's General Records Schedule (GRS) retention policies using AWS Bedrock and generative AI.
+
+![Utah Government Document Compliance Evaluator](https://via.placeholder.com/800x400?text=Utah+Government+Document+Compliance+Evaluator)
 
 ## Table of Contents
 
@@ -11,6 +13,7 @@ A comprehensive application for evaluating document compliance with General Reco
 - [Configuration](#configuration)
 - [Usage](#usage)
 - [Enhanced Knowledge Base Format](#enhanced-knowledge-base-format)
+- [Knowledge Base Configuration](#knowledge-base-configuration)
 - [Large Document Handling](#large-document-handling)
 - [Architecture](#architecture)
 - [Development](#development)
@@ -21,7 +24,7 @@ A comprehensive application for evaluating document compliance with General Reco
 
 ## Overview
 
-The Government Document Compliance Evaluator is an AI-powered application that helps government agencies evaluate documents for compliance with General Records Schedule (GRS) retention policies. The application analyzes document content, determines the appropriate GRS category and item number, and provides compliance recommendations based on document date and retention period requirements.
+The Utah Government Document Compliance Evaluator is an AI-powered application that helps government agencies evaluate documents for compliance with Utah's General Records Schedule (GRS) retention policies. The application analyzes document content, determines the appropriate GRS category and item number, and provides compliance recommendations based on document date and retention period requirements.
 
 ## Technology Stack
 
@@ -88,8 +91,8 @@ The Government Document Compliance Evaluator is an AI-powered application that h
 
 1. Clone the repository:
 ```bash
-git clone https://github.com/cmackdev/compliance_evaluator.git
-cd compliance-evaluator
+git clone https://github.com/your-organization/utah-compliance-evaluator.git
+cd utah-compliance-evaluator
 ```
 
 2. Create and activate a virtual environment:
@@ -202,6 +205,38 @@ The application uses an enhanced knowledge base format for better document class
    - Improved compliance determination
    - Reduced need for excessive prompt engineering
 
+## Knowledge Base Configuration
+
+The application uses AWS Bedrock's knowledge base capabilities with optimized configuration for better document matching:
+
+### Parsing Strategy
+
+We use **Amazon Bedrock Data Automation** as the parsing strategy to extract structured information from GRS documents, which helps identify key fields like GRS item numbers, document types, and retention periods.
+
+### Chunking Strategy
+
+We use **Semantic Chunking** with the following parameters:
+
+1. **Max Buffer Size for Comparing Sentence Groups**: 1
+   - Allows for comparing adjacent sentence groups
+   - Helps maintain logical connections between related content
+
+2. **Max Token Size for a Chunk**: 600
+   - Ensures complete GRS items stay together in a single chunk
+   - Prevents splitting related information across multiple chunks
+
+3. **Breakpoint Threshold for Sentence Group Similarity**: 85
+   - Creates distinct chunks for different GRS items
+   - Keeps related information together within each GRS item
+   - Balances between too many small chunks and too few large chunks
+
+### Benefits of Optimized Configuration
+
+- Better matching between documents and GRS items
+- More accurate identification of document types
+- Improved compliance determination
+- Reduced errors in GRS item number assignment
+
 ## Large Document Handling
 
 The application automatically handles large documents by:
@@ -266,13 +301,15 @@ This approach ensures that the compliance agent can efficiently process document
 ### Project Structure
 
 ```
-compliance-evaluator/
+utah-compliance-evaluator/
 ├── compliance-agent.py       # Main application file
-├── convert_to_enhanced_jsonl.py  # Conversion script for original schedule items to enhanced version
+├── convert_to_enhanced_jsonl.py  # Conversion script
 ├── requirements.txt          # Python dependencies
 ├── ScheduleItems.csv         # Original GRS data
-├── enhanced_compliance_records.jsonl  # Enhanced knowledge base document for embedding and chunking
+├── enhanced_compliance_records.jsonl  # Enhanced knowledge base
 ├── README.md                 # This documentation
+├── AmazonQ.md                # Amazon Q integration guide
+└── sm-monitoring/            # SageMaker monitoring components
 ```
 
 ### Development Workflow
@@ -337,8 +374,28 @@ region = os.environ.get("AWS_REGION", "us-west-2")
 
 3. **Agent Response Issues**:
    - Check the agent configuration in AWS Bedrock
-   - Verify the knowledge base is properly formatted
-   - Review the prompt engineering for potential improvements
+   - Verify the knowledge base is properly formatted and configured
+   - Review the knowledge base chunking parameters
+   - Ensure the document type is clearly identifiable in the document
+
+### Knowledge Base Troubleshooting
+
+If the agent is providing incorrect GRS item numbers:
+
+1. **Check Knowledge Base Configuration**:
+   - Verify semantic chunking parameters are optimized
+   - Ensure the max token size is sufficient for complete GRS items
+   - Adjust the breakpoint threshold if related items are being split
+
+2. **Document Type Clarity**:
+   - Ensure documents clearly state their type (e.g., "Health Inspection Report")
+   - Include key identifying information in the first few paragraphs
+   - For ambiguous documents, add more context about the document purpose
+
+3. **Test with Simple Queries**:
+   - Try direct queries like "What is the GRS item for hotel inspection reports?"
+   - Verify the agent can correctly retrieve specific GRS items
+   - Use the results to diagnose knowledge base access issues
 
 ### Logging
 
@@ -360,7 +417,7 @@ logger.error("Error processing document: %s", str(e))
 
 ## Contributing
 
-Contributions to the Document Compliance Evaluator are welcome!
+Contributions to the Utah Government Document Compliance Evaluator are welcome!
 
 1. Fork the repository
 2. Create a feature branch
@@ -374,5 +431,3 @@ Please ensure your code follows the project's style guidelines and includes appr
 This project is licensed under the MIT License - see the LICENSE file for details.
 
 ---
-
-
