@@ -13,8 +13,8 @@ import docx
 client = boto3.client('bedrock-agent-runtime', region_name='us-west-2')
 
 # Agent alias ARN
-agent_id = "<agent_id>  # Supervisor agent
-agent_alias_id = "<alias_id>"  # agent alias
+agent_id = "<agent_id>"  # Supervisor agent
+agent_alias_id = "<agent_alias_id>"  # compliance alias
 
 # Function to extract text from PDF with size limiting
 def extract_text_from_pdf(pdf_file, max_pages=10, max_chars=50000):
@@ -90,7 +90,7 @@ def analyze_document_content(document_text):
     """
     Pre-process and analyze document content to extract key metadata
     that will help with classification and compliance determination based on
-    Utah's General Records Schedule (GRS) categories
+    General Records Schedule (GRS) categories
     """
     metadata = {
         "detected_date": None,
@@ -103,7 +103,8 @@ def analyze_document_content(document_text):
         "contains_policy_terms": any(term in document_text.lower() for term in ["policy", "regulation", "guideline", "procedure", "standard"]),
         "contains_legal_terms": any(term in document_text.lower() for term in ["legal", "law", "statute", "compliance", "requirement"]),
         "contains_administrative_terms": any(term in document_text.lower() for term in ["administrative", "administration", "management", "operations"]),
-        "contains_personnel_terms": any(term in document_text.lower() for term in ["personnel", "employee", "staff", "hiring", "recruitment"])
+        "contains_personnel_terms": any(term in document_text.lower() for term in ["personnel", "employee", "staff", "hiring", "recruitment"]),
+        "contains_grama_terms": any(term in document_text.lower() for term in ["grama", "government records access", "records request", "access request"])
     }
     
     # Extract potential date
@@ -191,13 +192,28 @@ def analyze_document_content(document_text):
         "correspondence": "Correspondence",
         "meal": "Meal Report",
         "food delivery": "Food Delivery Report",
-        "senior center": "Senior Center Report"
+        "senior center": "Senior Center Report",
+        "grama": "GRAMA Request",
+        "government records access": "GRAMA Request",
+        "records access request": "GRAMA Request",
+        "records request": "GRAMA Request",
+        "access request": "GRAMA Request"
     }
     
-    for keyword, doc_type in document_types.items():
-        if keyword.lower() in document_text.lower():
-            metadata["detected_document_type"] = doc_type
+    # Special case for GRAMA requests - check with higher priority
+    grama_terms = ["grama", "government records access", "records access request", "records request", "access request"]
+    for term in grama_terms:
+        if term.lower() in document_text.lower():
+            metadata["detected_document_type"] = "GRAMA Request"
+            metadata["is_grama_request"] = True
             break
+    
+    # If not already identified as GRAMA, check other document types
+    if not metadata.get("is_grama_request", False):
+        for keyword, doc_type in document_types.items():
+            if keyword.lower() in document_text.lower():
+                metadata["detected_document_type"] = doc_type
+                break
     
     return metadata
 
@@ -206,7 +222,7 @@ def create_enhanced_prompt(document_text, metadata):
     """
     Create a more detailed prompt for the Bedrock agent that includes
     extracted metadata and specific instructions for compliance evaluation
-    based on Utah's General Records Schedule (GRS)
+    based on General Records Schedule (GRS)
     """
     # Get current date for compliance checking
     from datetime import datetime
@@ -217,16 +233,23 @@ def create_enhanced_prompt(document_text, metadata):
     if 'truncated' in metadata and metadata['truncated']:
         truncation_note = "\nNOTE: This document was truncated for processing. Analysis is based on the first portion of the document only."
     
-    prompt = f"""I need you to evaluate this document for compliance with Utah's General Records Schedule (GRS) retention policies.
+    # Special handling for GRAMA requests
+    grama_note = ""
+    if metadata.get("is_grama_request", False):
+        grama_note = "\nIMPORTANT: This appears to be a GRAMA (Government Records Access and Management Act) request. Pay special attention to GRS items 1711 (Records access requests and appeals) and 1715 (GRAMA appeals board case files). GRAMA requests typically have a 2-year retention period after final action, NOT 3 years."
+    
+    prompt = f"""I need you to evaluate this document for compliance with General Records Schedule (GRS) retention policies.
 Please analyze the document carefully and provide the following information in a structured format:
 
-1. Document Type: [Identify the specific document type, such as Meeting Minutes, Financial Report, Policy Document, etc.]
-2. GRS Category: [Identify the appropriate Utah GRS category this document belongs to, such as Administrative Records, Budget/Finance, Legal, Personnel, etc.]
-3. GRS Item Number: [Provide the specific GRS item number that applies to this document]
+1. Document Type: [Identify the specific document type]
+2. GRS Category: [Identify the appropriate GRS category]
+3. GRS Item Number: [REQUIRED: You MUST provide a specific GRS item number (e.g., GRS-1234) that EXISTS in the knowledge base. Do NOT fabricate GRS numbers. If multiple items could apply, list the most relevant one first. Do NOT use phrases like "consistent with" or "similar to".]
 4. Document Date: [Extract the date of the document if available]
 5. Compliance Status: [Determine if the document is "Compliant", "Non-Compliant", or "Needs Review"]
-6. Retention Period: [Specify the retention period for this type of document according to Utah GRS]
+6. Retention Period: [Specify the exact retention period as stated in the GRS item]
 7. Recommendations: [Provide specific recommendations for handling this document]
+
+If you cannot determine a specific GRS item number with confidence, state "GRS Item Number: Unable to determine with confidence" and then list the 2-3 most likely GRS items with brief explanations.
 
 IMPORTANT COMPLIANCE VERIFICATION INSTRUCTIONS:
 - Today's date is {current_date}
@@ -235,7 +258,9 @@ IMPORTANT COMPLIANCE VERIFICATION INSTRUCTIONS:
 - If you cannot determine the document date or exact retention period, mark it as "Needs Review"
 - Be precise about the retention period as specified in the GRS item
 - Double-check your compliance determination by comparing the document date + retention period against today's date
+- ONLY use GRS item numbers that exist in the knowledge base
 {truncation_note}
+{grama_note}
 
 Additional metadata detected:
 - Word count: {metadata['word_count']}
@@ -261,15 +286,24 @@ def create_chat_prompt(user_question, document_text=None, evaluation_results=Non
     Create a prompt for chat questions that emphasizes accuracy and
     encourages asking for clarification when needed
     """
-    prompt = f"""You are an assistant specializing in Utah's General Records Schedule (GRS) retention policies.
+    # Check if the question is about GRAMA requests
+    is_grama_question = any(term.lower() in user_question.lower() for term in 
+                           ["grama", "government records access", "records request", "access request"])
+    
+    grama_note = ""
+    if is_grama_question:
+        grama_note = "\nIMPORTANT: This question appears to be about GRAMA (Government Records Access and Management Act) requests. Pay special attention to GRS items 1711 (Records access requests and appeals) and 1715 (GRAMA appeals board case files). GRAMA requests typically have a 2-year retention period after final action, NOT 3 years."
+    
+    prompt = f"""You are an assistant specializing in General Records Schedule (GRS) retention policies.
 
 IMPORTANT INSTRUCTIONS:
-1. Provide information from Utah's GRS knowledge base that directly answers the user's question.
+1. Provide information from the GRS knowledge base that directly answers the user's question.
 2. If the question is about a specific document type or retention period, identify the EXACT GRS item number that applies.
 3. Only ask for clarification if the question is genuinely ambiguous and could refer to multiple different GRS items.
 4. When you know the relevant GRS item, provide it immediately rather than asking unnecessary follow-up questions.
 5. Always include the GRS item number, retention period, and a brief description of the record type.
 6. If you're not certain about a specific detail, acknowledge that uncertainty rather than making up information.
+{grama_note}
 
 User question: {user_question}
 """
@@ -573,8 +607,8 @@ st.markdown("""
 st.markdown("""
 <div class="header-container">
     <div class="header-text">
-        <h1>Utah Government Document Compliance Evaluator</h1>
-        <p>Upload government documents to evaluate compliance with Utah General Records Schedule (GRS) retention policies</p>
+        <h1>Government Document Compliance Evaluator</h1>
+        <p>Upload government documents to evaluate compliance with General Records Schedule (GRS) retention policies</p>
     </div>
 </div>
 """, unsafe_allow_html=True)
@@ -705,7 +739,7 @@ Author: Jane Smith, Division Director
 EXECUTIVE SUMMARY:
 This monthly report provides an overview of the Aging Services Division's activities, 
 accomplishments, and challenges for April 2025. The division continues to provide essential 
-services to Utah's aging population while implementing new initiatives to improve service delivery.
+services to the aging population while implementing new initiatives to improve service delivery.
 
 KEY METRICS:
 - Clients served: 1,245 (up 3% from previous month)
@@ -793,7 +827,7 @@ PERFORMANCE METRICS:
 3. Winter storm road clearance: Target of 95% of priority routes within 4 hours
 
 CONCLUSION:
-This budget proposal represents the minimum funding required to maintain Utah's highways at the safety and quality standards expected by the public and mandated by state regulations.
+This budget proposal represents the minimum funding required to maintain highways at the safety and quality standards expected by the public and mandated by state regulations.
 
 Submitted by:
 Robert Johnson
@@ -811,7 +845,7 @@ Director, Highway Maintenance Division
         st.session_state.evaluation_results = None
         st.session_state.document_text = """
 MEETING MINUTES
-Utah Department of Environmental Quality
+Department of Environmental Quality
 Water Quality Board
 Date: April 25, 2025
 Time: 10:00 AM - 12:30 PM
@@ -837,9 +871,9 @@ The minutes from the March 28, 2025 meeting were reviewed and approved unanimous
 
 2. PUBLIC COMMENTS
 Three members of the public provided comments regarding the proposed changes to wastewater treatment regulations:
-- John Davis, Sierra Club Utah Chapter
-- Maria Gonzalez, Utah Association of Industries
-- Professor Alan Smith, University of Utah Environmental Engineering Department
+- John Davis, Sierra Club Chapter
+- Maria Gonzalez, Association of Industries
+- Professor Alan Smith, Environmental Engineering Department
 
 3. DIRECTOR'S REPORT
 Director Wright presented the quarterly water quality monitoring results for Q1 2025:
@@ -1131,6 +1165,12 @@ def send_message():
                     "content": full_response
                 })
                 
+                # Add assistant response to chat history
+                st.session_state.chat_history.append({
+                    "role": "assistant",
+                    "content": full_response
+                })
+                
                 # Increment the key to force a new input widget
                 st.session_state.chat_input_key += 1
                 
@@ -1159,4 +1199,4 @@ if st.button("Send"):
 
 # Footer
 st.markdown("---")
-st.markdown("© 2025 Utah Government Document Compliance Evaluator | Powered by AWS Bedrock")
+st.markdown("© 2025 Government Document Compliance Evaluator | Powered by AWS Bedrock")
